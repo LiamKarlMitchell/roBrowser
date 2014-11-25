@@ -9,7 +9,7 @@
  * @author Liam Mitchell
  */
 
-define( ['Utils/BinaryReader', 'Utils/gl-matrix'], function( BinaryReader, glMatrix )
+define( ['Utils/BinaryReader', 'Utils/gl-matrix', 'Utils/CRC32'], function( BinaryReader, glMatrix )
 {
 	'use strict';
 
@@ -517,7 +517,7 @@ GR2.File.prototype.CRCIsVaild = function(FileName) {
 		}
 
 		function Header(fp) {
-			fp.seek(44); // Header appears to be at location 32
+			fp.seek(0x20);
 			
 		    this.Version = fp.readUInt();
 		    this.TotalSize = fp.readUInt();
@@ -532,31 +532,98 @@ GR2.File.prototype.CRCIsVaild = function(FileName) {
 		    this.StringDatabaseCRC = fp.readUInt();
 		    //this.ReservedUnused = [fp.readUInt(), fp.readUInt(), fp.readUInt()]; // Not going to bother reading unused data
 		}
+
+		function GrannyFileMagicValue(fp) {
+			this.MagicValue = [fp.readUInt(), fp.readUInt(), fp.readUInt(), fp.readUInt()];
+			this.HeaderSize = fp.readUInt();
+			this.HeaderFormat = fp.readUInt();
+			this.Reserved = [fp.readUInt(), fp.readUInt()];
+		}
+
+		// Not called with new as we return an array of 3 float.
+		function Triple() {
+			if (arguments.length === 1) {
+				// Set from file pointer
+				var fp = arguments[0];
+				return [fp.readFloat(), fp.readFloat(), fp.readFloat()];
+			} else if (arguments.length == 3) {
+				// Set from X,Y,Z etc
+				return [arguments[0], arguments[1], arguments[2]]
+			}
+			return [0,0,0];
+		}
+
+		function GrannyDataTypeDefinition()
+		{
+		    //granny_member_type Type;
+		    //char const * Name;
+		    //this.ReferenceType = null;// GrannyDataTypeDefinition * ;
+		    //granny_int32 ArrayWidth;
+		    //granny_int32 Extra[3];
+		    //granny_uintaddrx Ignored__Ignored;
+		}		
+
+		function GrannyVariant(fp) {
+    		this.Type = new GrannyDataTypeDefinition(fp);
+    		this.Object = null;
+		}
+
+	    function GrannyArtToolInfo(fp) {
+		    this.FromArtToolName = fp.readString(30); // TODO Check how to read strings
+		    this.ArtToolMajorRevision = fp.readUInt();
+		    this.ArtToolMinorRevision = fp.readUInt();
+		    this.UnitsPerMeter = fp.readFloat();
+		    this.Origin = Triple(fp);
+		    this.RightVector = Triple(fp);
+		    this.UpVector = Triple(fp);
+		    this.BackVector = Triple(fp);
+		    this.ExtendedData = new GrannyVariant(fp);
+	    }
+
+		function GrannyFileInfo(fp) {
+		    granny_art_tool_info * ArtToolInfo;
+		    granny_exporter_info * ExporterInfo;
+		    this.FromFileName = fp.readString(30); // TODO Check how to read strings.
+		    this.TextureCount = fp.readInt();
+		    this.Textures = null; //granny_texture ** Textures;
+		    this.MaterialCount = fp.readInt();
+		    this.Materials = null; //granny_material ** Materials;
+		    this.SkeletonCount = fp.readInt();
+		    this.Skeletons = null; //granny_skeleton ** Skeletons;
+		    this.VertexDataCount = fp.readInt();
+		    this.VertexDatas = null; //granny_vertex_data ** VertexDatas;
+		    this.TriTopologyCount = fp.readInt();
+		    this.TriTopologies = null; //granny_tri_topology ** TriTopologies;
+		    this.MeshCount = fp.readInt();
+		    this.Meshes = null; //granny_mesh ** Meshes;
+		    this.ModelCount = fp.readInt();
+		    this.Models = null; //granny_model ** Models;
+		    this.TrackGroupCount = fp.readInt();
+		    this.TrackGroups = null; //granny_track_group ** TrackGroups;
+		    this.AnimationCount = fp.readInt();
+		    //granny_animation ** Animations;
+		    //granny_variant ExtendedData;
+		}
 		//header  = fp.readBinaryString(2);
 	    
 		//if (header.charAt(1) !== 'g') {
 //			throw new Error('GR2::load() - Incorrect header "' + header + '", must be "g"');
 		//}
-		console.error('TEST ONLY');
-		debugger;
 		// Read infos
-        //this.IsByteReversed = fp.readByte(); // bool IsByteReversed;
+		fp.seek(0x1F);
+        this.IsByteReversed = fp.readByte(); // bool IsByteReversed;
         this.Header = new Header(fp);
-//     granny_uint32 Version;
-//     granny_uint32 TotalSize;
-//     granny_uint32 CRC;
-//     granny_uint32 SectionArrayOffset;
-//     granny_uint32 SectionArrayCount;
-//     granny_grn_reference RootObjectTypeDefinition;
-//     granny_grn_reference RootObject;
-//     granny_uint32 TypeTag;
-//     granny_uint32 ExtraTags[GrannyGRNExtraTagCount];
-//     granny_uint32 StringDatabaseCRC;
-//     granny_uint32 ReservedUnused[3];
+        this.SourceMagicValue = new GrannyFileMagicValue(fp);
+		this.SectionCount = fp.readInt();
+		this.Sections = null;
+		this.Marshalled = null;
+		this.IsUserMemory = null;
+		this.ConversionBuffer = null;
 
-        //this.header = new GrannyHeader(); // granny_grn_file_header * Header;
-// 		granny_grn_file_magic_value *  SourceMagicValue;
-// 		granny_int32x SectionCount;
+		var crc = fp.CRC32(0x58);
+
+	    console.log(crc == this.Header.CRC ? 'CRC Matches' : 'CRC Not Match');
+        return;
 // 		void ** Sections;
 // 		bool * Marshalled;
 // 		bool * IsUserMemory;
