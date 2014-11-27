@@ -510,6 +510,62 @@ GR2.File.prototype.CRCIsVaild = function(FileName) {
 
 		// Read header.
 		fp      = new BinaryReader(data);
+		// Standard Granny File structure distrbution.
+        // 0 GrannyStandardMainSection             - All structures go here
+        // 1 GrannyStandardRigidVertexSection      - All rigid vertices go here
+        // 2 GrannyStandardRigidIndexSection       - All indices into rigid vertex arrays go here
+        // 3 GrannyStandardDeformableVertexSection - All deformable vertices go here
+        // 4 GrannyStandardDeformableIndexSection  - All indices into deformable vertex arrays go here
+        // 5 GrannyStandardTextureSection          - All textures go here
+
+		function Section(fp) {
+			this.Format = fp.readUInt();
+    		this.DataOffset = fp.readUInt();
+    		this.DataSize = fp.readUInt();
+    		this.ExpandedDataSize = fp.readUInt();
+    		this.InternalAlignment = fp.readUInt();
+    		this.First16Bit = fp.readUInt();
+    		this.First8Bit = fp.readUInt();
+    		this.PointerFixupArrayOffset = fp.readUInt();
+    		this.PointerFixupArrayCount = fp.readUInt();
+    		this.MixedMarshallingFixupArrayOffset = fp.readUInt();
+    		this.MixedMarshallingFixupArrayCount = fp.readUInt();
+
+    		this.IsReady = false;			
+		}
+
+		Section.prototype.decompress = function(fp) {
+			if (this.IsReady) return true;;
+			
+			var data = new BinaryReader(fp.buffer,this.DataOffset,this.DataSize);
+			// TODO Create an output buffer the size of ExpandedDataSize for copying uncompressed data into.
+
+			switch (this.Format) {
+				case GR2.COMPRESSION_TYPE.NoCompression:
+				  if (this.ExpandedDataSize != this.DataSize) {
+				  	console.error('Expanded Data Size and DataSize do not match.');
+				  }
+				  this.data = data;
+				  this.IsReady = true;
+				break;
+				case GR2.COMPRESSION_TYPE.Oodle0Compression:
+				console.error('Unhandled Compression Type Oodle0Compression');
+				break;
+				case GR2.COMPRESSION_TYPE.Oodle1Compression:
+				console.error('Unhandled Compression Type Oodle1Compression');
+				break;
+				case GR2.COMPRESSION_TYPE.OnePastLastCompressionType:
+				console.error('Unhandled Compression Type OnePastLastCompressionType');
+				break;
+			}
+
+// After decompression (if necessary), data from a granny_grn_section must be block marshalled, heterogenous objects must be marshalled, and pointers must be fixed up. Block marshalling is accomplished like this: 
+// 			if (this.FileIsByteReversed) {
+// 				ReverseSection();
+// 			}
+
+			return this.IsReady;
+		}
 
 		function Reference(fp) {
 			this.SectionIndex = fp.readUInt();
@@ -517,8 +573,6 @@ GR2.File.prototype.CRCIsVaild = function(FileName) {
 		}
 
 		function Header(fp) {
-			fp.seek(0x20);
-			
 		    this.Version = fp.readUInt();
 		    this.TotalSize = fp.readUInt();
 		    this.CRC = fp.readUInt();
@@ -530,7 +584,7 @@ GR2.File.prototype.CRCIsVaild = function(FileName) {
 		    this.ExtraTags = []; 
 		    for (var i = 0; i < GR2.GRNExtraTagCount; i++) { this.ExtraTags.push(fp.readUInt()); }
 		    this.StringDatabaseCRC = fp.readUInt();
-		    //this.ReservedUnused = [fp.readUInt(), fp.readUInt(), fp.readUInt()]; // Not going to bother reading unused data
+		    this.ReservedUnused = [fp.readUInt(), fp.readUInt(), fp.readUInt()];
 		}
 
 		function GrannyFileMagicValue(fp) {
@@ -605,7 +659,8 @@ GR2.File.prototype.CRCIsVaild = function(FileName) {
 		    //granny_variant ExtendedData;
 		}
 		//header  = fp.readBinaryString(2);
-	    
+		// GrannyReverseSection
+
 		//if (header.charAt(1) !== 'g') {
 //			throw new Error('GR2::load() - Incorrect header "' + header + '", must be "g"');
 		//}
@@ -615,14 +670,25 @@ GR2.File.prototype.CRCIsVaild = function(FileName) {
         this.Header = new Header(fp);
         this.SourceMagicValue = new GrannyFileMagicValue(fp);
 		this.SectionCount = fp.readInt();
-		this.Sections = null;
+		this.Sections = [];
 		this.Marshalled = null;
 		this.IsUserMemory = null;
 		this.ConversionBuffer = null;
-
-		var crc = fp.CRC32(0x58);
-
+		var SectionArrayAddress = 0x20+this.Header.SectionArrayOffset;
+		var crc = fp.CRC32(SectionArrayAddress);
+		
 	    console.log(crc == this.Header.CRC ? 'CRC Matches' : 'CRC Not Match');
+		fp.seek(SectionArrayAddress);
+		for (var i=0; i< this.Header.SectionArrayCount; i++) {
+			var s = new Section(fp);
+			if (s.Format == GR2.COMPRESSION_TYPE.NoCompression) {
+				s.decompress(fp);
+			}
+			this.Sections.push(s);
+		}
+
+		//delete this.Header.SectionArrayCount; // Removing Header.SectionArrayCount count as it is no longer needed. Sections.length is it.
+		console.log(this);
         return;
 // 		void ** Sections;
 // 		bool * Marshalled;
